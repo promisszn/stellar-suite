@@ -6,12 +6,15 @@ import { EditorTabs } from "@/components/ide/EditorTabs";
 import CodeEditor from "@/components/ide/CodeEditor";
 import { Terminal } from "@/components/ide/Terminal";
 import { Toolbar } from "@/components/ide/Toolbar";
+import { AssistantSidebar } from "@/components/ide/AssistantSidebar";
 import { ContractPanel } from "@/components/ide/ContractPanel";
 import { IdentitiesView } from "@/components/ide/IdentitiesView";
+import { ProductTour } from "@/components/ide/ProductTour";
 import { StatusBar } from "@/components/ide/StatusBar";
 import { SearchPane } from "@/components/ide/SearchPane";
+import { IdeShell } from "@/components/layout/IdeShell";
 import { useIdentityStore } from "@/store/useIdentityStore";
-import { useFileStore } from "@/store/useFileStore";
+import { useWorkspaceStore } from "@/store/workspaceStore";
 import { useDiagnosticsStore } from "@/store/useDiagnosticsStore";
 import { showCompilationFailedToast, showCompilationSuccessToast } from "@/lib/compilationToasts";
 import { executeWriteTransaction, type InvokePhase } from "@/lib/transactionExecution";
@@ -20,19 +23,18 @@ import { type NetworkKey } from "@/lib/networkConfig";
 import { FileNode } from "@/lib/sample-contracts";
 import { createStreamProcessor, readCompileResponse } from "@/utils/compileStream";
 import { parseMixedOutput } from "@/utils/cargoParser";
+import { RpcService } from "@/lib/rpcService";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { DeploymentsView } from "@/components/ide/DeploymentsView";
 import { useDeployedContractsStore } from "@/store/useDeployedContractsStore";
 import { useWalletStore } from "@/store/walletStore";
+import { createInvocationDebugData, type InvocationDebugData } from "@/lib/invokeResult";
 import {
   FileText,
   FolderTree,
-  PanelLeftClose,
-  PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
   Rocket,
-  Search,
   Terminal as TerminalIcon,
   History,
   Users,
@@ -86,6 +88,7 @@ const Index = () => {
   const [terminalOutput, setTerminalOutput] = useState("");
   const [isCompiling, setIsCompiling] = useState(false);
   const [contractId, setContractId] = useState<string | null>(null);
+  const [lastInvocation, setLastInvocation] = useState<InvocationDebugData | null>(null);
   const [showExplorer, setShowExplorer] = useState(false);
   const [showPanel, setShowPanel] = useState(false);
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
@@ -97,11 +100,12 @@ const Index = () => {
   const dragDepthRef = useRef(0);
 
   const {
+    // File System
     files,
-    setFiles,
     openTabs,
     activeTabPath,
     unsavedFiles,
+    setFiles,
     setActiveTabPath,
     addTab,
     closeTab,
@@ -111,20 +115,51 @@ const Index = () => {
     renameNode,
     markSaved,
     updateFileContent,
+
+    // Network
     network,
     horizonUrl,
     networkPassphrase,
     customRpcUrl,
     setNetwork,
+    setHorizonUrl,
+    setNetworkPassphrase,
     setCustomRpcUrl,
-  } = useFileStore();
+
+    // UI Layout
+    terminalExpanded,
+    terminalOutput,
+    isCompiling,
+    buildState,
+    contractId,
+    showExplorer,
+    showPanel,
+    cursorPos,
+    saveStatus,
+    mobilePanel,
+    isExplorerDragActive,
+    leftSidebarTab,
+    setTerminalExpanded,
+    setTerminalOutput,
+    setIsCompiling,
+    setBuildState,
+    setContractId,
+    setShowExplorer,
+    setShowPanel,
+    setCursorPos,
+    setSaveStatus,
+    setMobilePanel,
+    setIsExplorerDragActive,
+    setLeftSidebarTab,
+    appendTerminalOutput,
+  } = useWorkspaceStore();
 
   const { loadIdentities, activeContext, activeIdentity, webWalletPublicKey, setWebWalletPublicKey } = useIdentityStore();
   const { addContract } = useDeployedContractsStore();
   const { setDiagnostics, clearDiagnostics } = useDiagnosticsStore();
   const { publicKey: connectedWalletPublicKey, walletType } = useWalletStore();
 
-  const [buildState, setBuildState] = useState<BuildState>("idle");
+  const dragDepthRef = useRef(0);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -152,11 +187,7 @@ const Index = () => {
     };
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
-  }, []);
-
-  const appendTerminalOutput = useCallback((chunk: string) => {
-    setTerminalOutput((prev) => prev + chunk);
-  }, []);
+  }, [setShowExplorer, setShowPanel]);
 
   const handleFileSelect = useCallback(
     (path: string[], file: FileNode) => {
@@ -175,16 +206,8 @@ const Index = () => {
   );
 
   const handleContentChange = useCallback((newContent: string) => {
-    const nextFiles = cloneFiles(files);
-    const file = findNode(nextFiles, activeTabPath);
-    if (file) {
-      file.content = newContent;
-      setFiles(nextFiles);
-      // Unsaved tracking is handled within the store via setUnsavedFiles usually, 
-      // but if not, we can manually update it here if necessary.
-      // Based on useFileStore, it uses unsavedFiles Set.
-    }
-  }, [activeTabPath, files, setFiles]);
+    updateFileContent(activeTabPath, newContent);
+  }, [activeTabPath, updateFileContent]);
 
   const handleSave = useCallback(() => {
     markSaved(activeTabPath);
@@ -331,6 +354,28 @@ const Index = () => {
       walletType,
       webWalletPublicKey,
     ]
+    async (fn: string, args: string, isSimulation: boolean) => {
+      setTerminalExpanded(true);
+      const signer =
+        activeContext?.type === "web-wallet"
+          ? "browser-wallet"
+          : activeIdentity?.nickname ?? "anonymous";
+      appendTerminalOutput(`Invoking ${fn}(${args}) as ${signer}...\r\n`);
+      setTimeout(() => {
+        const result = '["Hello", "Dev"]';
+        appendTerminalOutput(`Result: ${result}\r\n`);
+        setLastInvocation(
+          createInvocationDebugData({
+            functionName: fn,
+            args,
+            signer,
+            network,
+            result,
+          })
+        );
+      }, 800);
+    },
+    [activeContext, activeIdentity, appendTerminalOutput, network]
   );
 
   const handleCreateFile = useCallback(
@@ -346,12 +391,29 @@ const Index = () => {
     },
     [createFolder]
   );
+      appendTerminalOutput(`${isSimulation ? 'Simulating' : 'Invoking'} ${fn}(${args}) as ${signer}...\r\n`);
 
-  const handleDeleteNode = useCallback(
-    (path: string[]) => {
-      deleteNode(path);
+      try {
+        const parsedArgs = JSON.parse(args);
+        const rpcUrl = network === "local" ? customRpcUrl : horizonUrl;
+        const rpcService = new RpcService(rpcUrl);
+
+        if (isSimulation) {
+          const result = await rpcService.simulateTransaction(contractId!, fn, Array.isArray(parsedArgs) ? parsedArgs : [parsedArgs]);
+          if (result.success) {
+            appendTerminalOutput(`Result: ${JSON.stringify(result.result)}\r\n`);
+          } else {
+            appendTerminalOutput(`Error: ${result.error}\r\n`);
+          }
+        } else {
+          // TODO: Implement actual transaction invocation
+          appendTerminalOutput('Transaction invocation not yet implemented\r\n');
+        }
+      } catch (error) {
+        appendTerminalOutput(`Error: ${error instanceof Error ? error.message : 'Invalid arguments'}\r\n`);
+      }
     },
-    [deleteNode]
+    [activeContext, activeIdentity, appendTerminalOutput, network, customRpcUrl, horizonUrl, contractId]
   );
 
   const handleRenameNode = useCallback(
@@ -416,7 +478,7 @@ const Index = () => {
         appendTerminalOutput(`Upload failed: ${message}\r\n`);
       }
     },
-    [appendTerminalOutput, files, setFiles]
+    [appendTerminalOutput, files, setFiles, setIsExplorerDragActive]
   );
 
   const getActiveContent = useCallback((): { content: string; language: string; fileId: string } => {
@@ -441,9 +503,16 @@ const Index = () => {
 
     window.addEventListener("ide:open-search", onOpenSearch);
     return () => window.removeEventListener("ide:open-search", onOpenSearch);
-  }, []);
+  }, [setLeftSidebarTab, setShowExplorer, setMobilePanel]);
 
   const { content, language, fileId } = getActiveContent();
+  const activeFileContext = activeTabPath.length
+    ? {
+        path: activeTabPath.join("/"),
+        language,
+        content,
+      }
+    : null;
 
   const tabsWithStatus = openTabs.map((t) => ({
     ...t,
@@ -452,6 +521,7 @@ const Index = () => {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
+      <ProductTour />
       <Toolbar
         onCompile={handleCompile}
         onDeploy={handleDeploy}
@@ -463,96 +533,28 @@ const Index = () => {
         saveStatus={saveStatus}
       />
 
+    <IdeShell
+      onCompile={handleCompile}
+      onDeploy={handleDeploy}
+      onTest={handleTest}
+      isCompiling={isCompiling}
+      buildState={isCompiling ? "building" : "idle"}
+      network={network}
+      onNetworkChange={setNetwork}
+      saveStatus={saveStatus}
+      activeTab={leftSidebarTab}
+      onTabChange={(tab) => {
+        if (leftSidebarTab === tab && showExplorer) {
+          setShowExplorer(false);
+        } else {
+          setLeftSidebarTab(tab);
+          setShowExplorer(true);
+        }
+      }}
+      sidebarVisible={showExplorer}
+      onToggleSidebar={() => setShowExplorer(!showExplorer)}
+    >
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Desktop Sidebar (Left) */}
-        <div className="hidden md:flex flex-col bg-sidebar border-r border-border shrink-0 z-10 w-12 items-center py-4 gap-4">
-          <button
-            onClick={() => {
-              if (leftSidebarTab === "explorer" && showExplorer) {
-                setShowExplorer(false);
-              } else {
-                setLeftSidebarTab("explorer");
-                setShowExplorer(true);
-              }
-            }}
-            className={`p-2 rounded-md transition-all ${
-              showExplorer && leftSidebarTab === "explorer" 
-                ? "bg-primary/20 text-primary shadow-sm" 
-                : "text-muted-foreground hover:text-foreground hover:bg-muted"
-            }`}
-            title="File Explorer"
-          >
-            <FolderTree className="h-5 w-5" />
-          </button>
-          
-          <button
-            onClick={() => {
-              if (leftSidebarTab === "identities" && showExplorer) {
-                setShowExplorer(false);
-              } else {
-                setLeftSidebarTab("identities");
-                setShowExplorer(true);
-              }
-            }}
-            className={`p-2 rounded-md transition-all ${
-                showExplorer && leftSidebarTab === "identities" 
-                  ? "bg-primary/20 text-primary shadow-sm" 
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
-              }`}
-            title="Identities"
-          >
-            <Users className="h-5 w-5" />
-          </button>
-
-          <button
-            onClick={() => {
-              if (leftSidebarTab === "deployments" && showExplorer) {
-                setShowExplorer(false);
-              } else {
-                setLeftSidebarTab("deployments");
-                setShowExplorer(true);
-              }
-            }}
-            className={`p-2 rounded-md transition-all ${
-              showExplorer && leftSidebarTab === "deployments" 
-                ? "bg-primary/20 text-primary shadow-sm" 
-                : "text-muted-foreground hover:text-foreground hover:bg-muted"
-            }`}
-            title="Recent Deployments"
-          >
-            <History className="h-5 w-5" />
-          </button>
-
-          <button
-            onClick={() => {
-              if (leftSidebarTab === "search" && showExplorer) {
-                setShowExplorer(false);
-              } else {
-                setLeftSidebarTab("search");
-                setShowExplorer(true);
-                setTimeout(() => searchInputRef.current?.focus(), 0);
-              }
-            }}
-            className={`p-2 rounded-md transition-all ${
-              showExplorer && leftSidebarTab === "search" 
-                ? "bg-primary/20 text-primary shadow-sm" 
-                : "text-muted-foreground hover:text-foreground hover:bg-muted"
-            }`}
-            title="Search"
-          >
-            <Search className="h-5 w-5" />
-          </button>
-
-          <div className="mt-auto border-t border-border w-full pt-4 flex flex-col items-center">
-            <button
-              onClick={() => setShowExplorer(!showExplorer)}
-              className="p-2 text-muted-foreground hover:text-foreground transition-colors"
-              title="Toggle Sidebar"
-            >
-              {showExplorer ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
-            </button>
-          </div>
-        </div>
 
         {/* Mobile Panels */}
         {mobilePanel === "explorer" && (
@@ -564,20 +566,7 @@ const Index = () => {
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              <FileExplorer
-                files={files}
-                onFileSelect={handleFileSelect}
-                activeFilePath={activeTabPath}
-                onCreateFile={createFile}
-                onCreateFolder={createFolder}
-                onDeleteNode={deleteNode}
-                onRenameNode={renameNode}
-                isDragActive={isExplorerDragActive}
-                onDragEnter={handleExplorerDragEnter}
-                onDragOver={handleExplorerDragOver}
-                onDragLeave={handleExplorerDragLeave}
-                onDrop={handleExplorerDrop}
-              />
+              <FileExplorer />
             </div>
             <div className="flex-1 bg-background/60" onClick={() => setMobilePanel("none")} />
           </div>
@@ -626,12 +615,18 @@ const Index = () => {
             <div className="flex-1 bg-background/60" onClick={() => setMobilePanel("none")} />
             <div className="w-72 bg-card border-l border-border h-full flex flex-col">
               <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-                <span className="text-xs font-semibold text-muted-foreground uppercase">Interact</span>
+                <span className="text-xs font-semibold text-muted-foreground uppercase">Assistant</span>
                 <button title="Close Interact" onClick={() => setMobilePanel("none")} className="text-muted-foreground hover:text-foreground">
                   <X className="h-4 w-4" />
                 </button>
               </div>
               <ContractPanel contractId={contractId} onInvoke={handleInvoke} invokeState={invokeState} />
+              <AssistantSidebar
+                activeFile={activeFileContext}
+                contractId={contractId}
+                onInvoke={handleInvoke}
+                lastInvocation={lastInvocation}
+              />
             </div>
           </div>
         )}
@@ -651,20 +646,7 @@ const Index = () => {
                 >
                   <div className="h-full w-full overflow-hidden border-r border-border bg-sidebar">
                     {leftSidebarTab === "explorer" && (
-                      <FileExplorer
-                        files={files}
-                        onFileSelect={handleFileSelect}
-                        activeFilePath={activeTabPath}
-                        onCreateFile={createFile}
-                        onCreateFolder={createFolder}
-                        onDeleteNode={deleteNode}
-                        onRenameNode={renameNode}
-                        isDragActive={isExplorerDragActive}
-                        onDragEnter={handleExplorerDragEnter}
-                        onDragOver={handleExplorerDragOver}
-                        onDragLeave={handleExplorerDragLeave}
-                        onDrop={handleExplorerDrop}
-                      />
+                      <FileExplorer />
                     )}
                     {leftSidebarTab === "identities" && (
                       <IdentitiesView network={network} />
@@ -706,21 +688,9 @@ const Index = () => {
             <ResizablePanel id="main-content" order={2} minSize={30} className="flex flex-col min-w-0">
               <ResizablePanelGroup direction="vertical" autoSaveId="ide-editor-terminal">
                 <ResizablePanel id="editor" order={1} defaultSize={75} minSize={30} className="flex flex-col min-w-0">
-                  <EditorTabs
-                    tabs={tabsWithStatus}
-                    activeTab={activeTabPath.join("/")}
-                    onTabSelect={setActiveTabPath}
-                    onTabClose={handleTabClose}
-                  />
+                  <EditorTabs />
                   <div className="flex-1 overflow-hidden">
-                    <CodeEditor
-                      content={content}
-                      language={language}
-                      fileId={fileId}
-                      onChange={handleContentChange}
-                      onCursorChange={(line, col) => setCursorPos({ line, col })}
-                      onSave={handleSave}
-                    />
+                    <CodeEditor />
                   </div>
                 </ResizablePanel>
 
@@ -728,22 +698,12 @@ const Index = () => {
                   <>
                     <ResizableHandle withHandle />
                     <ResizablePanel id="terminal" order={2} defaultSize={25} minSize={10} className="flex flex-col min-w-0">
-                      <Terminal
-                        output={terminalOutput}
-                        isExpanded={terminalExpanded}
-                        onToggle={() => setTerminalExpanded((prev) => !prev)}
-                        onClear={() => setTerminalOutput("")}
-                      />
+                      <Terminal />
                     </ResizablePanel>
                   </>
                 ) : (
                   <div className="shrink-0">
-                    <Terminal
-                      output={terminalOutput}
-                      isExpanded={false}
-                      onToggle={() => setTerminalExpanded(true)}
-                      onClear={() => setTerminalOutput("")}
-                    />
+                    <Terminal />
                   </div>
                 )}
               </ResizablePanelGroup>
@@ -756,6 +716,14 @@ const Index = () => {
           {showPanel && (
             <div className="w-64 border-l border-border bg-card">
               <ContractPanel contractId={contractId} onInvoke={handleInvoke} invokeState={invokeState} />
+            </div>
+            <div className="w-[22rem] border-l border-border bg-card">
+              <AssistantSidebar
+                activeFile={activeFileContext}
+                contractId={contractId}
+                onInvoke={handleInvoke}
+                lastInvocation={lastInvocation}
+              />
             </div>
           )}
           <div className="flex flex-col bg-card border-l border-border h-full">
@@ -772,17 +740,7 @@ const Index = () => {
 
       {/* Desktop Footer */}
       <div className="hidden md:block">
-        <StatusBar
-          language={language}
-          line={cursorPos.line}
-          col={cursorPos.col}
-          network={network as NetworkKey}
-          horizonUrl={horizonUrl}
-          customRpcUrl={customRpcUrl}
-          onNetworkChange={setNetwork}
-          onCustomRpcUrlChange={setCustomRpcUrl}
-          unsavedCount={unsavedFiles.size}
-        />
+        <StatusBar />
       </div>
 
       {/* Mobile Footer Navigation */}
@@ -842,7 +800,7 @@ const Index = () => {
           </button>
         </div>
       </div>
-    </div>
+    </IdeShell>
   );
 };
 
