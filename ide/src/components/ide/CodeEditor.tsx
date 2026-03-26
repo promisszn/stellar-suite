@@ -1,6 +1,8 @@
 import React, { Suspense, useEffect, useRef } from "react";
 import Editor, { type OnChange, type OnMount } from "@monaco-editor/react";
 import type * as Monaco from "monaco-editor";
+import { useWorkspaceStore } from "@/store/workspaceStore";
+import { useTheme } from "next-themes";
 
 interface RevealRangeDetail {
   fileId: string;
@@ -9,8 +11,9 @@ interface RevealRangeDetail {
 }
 
 export interface CodeEditorProps {
-  content: string;
-  language: string;
+  // All props made optional as they are now handled by workspaceStore
+  content?: string;
+  language?: string;
   fileId?: string;
   onChange?: (value: string) => void;
   onCursorChange?: (line: number, col: number) => void;
@@ -18,13 +21,29 @@ export interface CodeEditorProps {
 }
 
 const CodeEditor: React.FC<CodeEditorProps> = ({
-  content,
-  language,
-  fileId,
-  onChange,
-  onCursorChange,
-  onSave,
+  content: propContent,
+  language: propLanguage,
+  fileId: propFileId,
+  onChange: propOnChange,
+  onCursorChange: propOnCursorChange,
+  onSave: propOnSave,
 }: CodeEditorProps) => {
+  const {
+    files,
+    activeTabPath,
+    updateFileContent,
+    markSaved,
+    setCursorPos,
+  } = useWorkspaceStore();
+
+  const activeTabKey = activeTabPath.join("/");
+  const activeFile = files.find(f => f.name === activeTabPath[activeTabPath.length - 1]);
+  
+  const content = propContent ?? activeFile?.content ?? "";
+  const language = propLanguage ?? activeFile?.language ?? "rust";
+  const fileId = propFileId ?? activeTabKey;
+
+  const { resolvedTheme } = useTheme();
   const monacoRef = useRef<typeof Monaco | null>(null);
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const decorationIdsRef = useRef<string[]>([]);
@@ -64,11 +83,15 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
 
   const handleEditorChange: OnChange = (value) => {
     if (value === undefined) return;
-    onChange?.(value);
+    if (propOnChange) {
+      propOnChange(value);
+    } else {
+      updateFileContent(activeTabPath, value);
+    }
   };
 
   const defineTheme = (monaco: typeof Monaco) => {
-    // Define theme only once per mount.
+    // Define Stellars branded themes
     monaco.editor.defineTheme("stellar-dark", {
       base: "vs-dark",
       inherit: true,
@@ -84,8 +107,26 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
         "editorIndentGuide.activeBackground": "#45475a",
       },
     });
-    monaco.editor.setTheme("stellar-dark");
+
+    monaco.editor.defineTheme("stellar-light", {
+      base: "vs",
+      inherit: true,
+      rules: [],
+      colors: {
+        "editor.background": "#ffffff",
+        "editor.foreground": "#1e1e2e",
+        "editor.lineHighlightBackground": "#f5f5f5",
+        "editor.selectionBackground": "#e0e0e0",
+      },
+    });
   };
+
+  useEffect(() => {
+    if (monacoRef.current) {
+      const targetTheme = resolvedTheme === "dark" ? "stellar-dark" : "stellar-light";
+      monacoRef.current.editor.setTheme(targetTheme);
+    }
+  }, [resolvedTheme]);
 
   const handleEditorDidMount: OnMount = (editor, monaco) => {
     monacoRef.current = monaco;
@@ -94,17 +135,58 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     defineTheme(monaco);
 
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      if (propOnSave) propOnSave();
+      else markSaved(activeTabPath);
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, async () => {
+      if (language === "rust") {
+        await editor.getAction("editor.action.formatDocument")?.run();
+      }
       onSave?.();
     });
 
     editor.onDidChangeCursorPosition((e) => {
-      onCursorChange?.(e.position.lineNumber, e.position.column);
+      if (propOnCursorChange) {
+        propOnCursorChange(e.position.lineNumber, e.position.column);
+      } else {
+        setCursorPos({ line: e.position.lineNumber, col: e.position.column });
+      }
     });
 
     if (pendingRangeRef.current) {
       applyReveal(pendingRangeRef.current);
       pendingRangeRef.current = null;
     }
+
+    // Register Rust formatting provider
+    monaco.languages.registerDocumentFormattingEditProvider("rust", {
+      provideDocumentFormattingEdits: async (model) => {
+        const code = model.getValue();
+        try {
+          const response = await fetch("/api/format", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            console.error("Formatting failed:", errorData.details || errorData.error);
+            return []; // Fail gracefully, don't wipe content
+          }
+
+          const { formattedCode } = await response.json();
+          return [
+            {
+              range: model.getFullModelRange(),
+              text: formattedCode,
+            },
+          ];
+        } catch (error) {
+          console.error("Formatting API error:", error);
+          return [];
+        }
+      },
+    });
   };
 
   // Monaco's height is controlled by the parent container in this layout.
@@ -122,7 +204,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
           defaultLanguage={language}
           language={language}
           value={content}
-          theme="stellar-dark"
+          theme={resolvedTheme === "dark" ? "stellar-dark" : "stellar-light"}
           onChange={handleEditorChange}
           onMount={handleEditorDidMount}
           options={{
