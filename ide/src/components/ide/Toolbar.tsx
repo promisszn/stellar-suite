@@ -4,6 +4,7 @@ import { useState } from "react";
 import { BuildButton } from "@/components/ide/BuildButton";
 import { Button } from "@/components/ui/button";
 import { type NetworkKey } from "@/lib/networkConfig";
+import { WalletManager } from "@/components/WalletManager";
 
 type BuildState = "idle" | "building" | "success" | "error";
 
@@ -81,6 +82,7 @@ export function Toolbar({
               <option value="local">Local</option>
             </select>
           </label>
+          <WalletManager />
           <button className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="Settings">
             <Settings className="h-4 w-4" />
           </button>
@@ -113,6 +115,9 @@ export function Toolbar({
             <option value="mainnet">Mainnet</option>
             <option value="local">Local</option>
           </select>
+          <div className="scale-90 origin-right">
+            <WalletManager />
+          </div>
           <button
             onClick={() => setMobileMenuOpen((prev) => !prev)}
             className="p-1.5 text-muted-foreground hover:text-foreground"
