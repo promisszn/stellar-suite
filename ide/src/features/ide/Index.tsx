@@ -121,10 +121,12 @@ const Index = () => {
     horizonUrl,
     networkPassphrase,
     customRpcUrl,
+    customHeaders,
     setNetwork,
     setHorizonUrl,
     setNetworkPassphrase,
     setCustomRpcUrl,
+    setCustomHeaders,
 
     // UI Layout
     terminalExpanded,
@@ -354,7 +356,10 @@ const Index = () => {
       walletType,
       webWalletPublicKey,
     ]
-    , async (fn: string, args: string, isSimulation: boolean) => {
+  );
+
+  const handleInvokeTest = useCallback(
+    async (fn: string, args: string, isSimulation: boolean) => {
       setTerminalExpanded(true);
       const signer =
         activeContext?.type === "web-wallet"
@@ -391,12 +396,20 @@ const Index = () => {
     },
     [createFolder]
   );
+
+  const handleInvokeWithRpc = useCallback(
+    async (fn: string, args: string, isSimulation: boolean) => {
+      setTerminalExpanded(true);
+      const signer =
+        activeContext?.type === "web-wallet"
+          ? "browser-wallet"
+          : activeIdentity?.nickname ?? "anonymous";
       appendTerminalOutput(`${isSimulation ? 'Simulating' : 'Invoking'} ${fn}(${args}) as ${signer}...\r\n`);
 
       try {
         const parsedArgs = JSON.parse(args);
         const rpcUrl = network === "local" ? customRpcUrl : horizonUrl;
-        const rpcService = new RpcService(rpcUrl);
+        const rpcService = new RpcService(rpcUrl, customHeaders);
 
         if (isSimulation) {
           const result = await rpcService.simulateTransaction(contractId!, fn, Array.isArray(parsedArgs) ? parsedArgs : [parsedArgs]);
@@ -413,7 +426,7 @@ const Index = () => {
         appendTerminalOutput(`Error: ${error instanceof Error ? error.message : 'Invalid arguments'}\r\n`);
       }
     },
-    [activeContext, activeIdentity, appendTerminalOutput, network, customRpcUrl, horizonUrl, contractId]
+    [activeContext, activeIdentity, appendTerminalOutput, network, customRpcUrl, horizonUrl, contractId, customHeaders]
   );
 
   const handleRenameNode = useCallback(
@@ -724,6 +737,7 @@ const Index = () => {
                 onInvoke={handleInvoke}
                 lastInvocation={lastInvocation}
               />
+            </div>
             </div>
           )}
           <div className="flex flex-col bg-card border-l border-border h-full">
