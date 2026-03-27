@@ -3,6 +3,7 @@ import { useDiagnosticsStore } from "@/store/useDiagnosticsStore";
 import { useCoverageStore } from "@/store/useCoverageStore";
 import { useWorkspaceStore } from "@/store/workspaceStore";
 import { applyEditsToTree, computeRenameEdits, validateRustIdentifier } from "@/utils/renameProvider";
+import { useDiagnosticsStore as _useDiagnosticsStore } from "@/store/useDiagnosticsStore";
 import { useEditorStore } from "@/store/editorStore";
 import Editor, { OnChange, OnMount } from "@monaco-editor/react";
 import type * as Monaco from "monaco-editor";
@@ -262,36 +263,55 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ onCursorChange, onSave }) => {
             oldName,
             newName,
           );
+
           if (error) return Promise.reject(new Error(error));
           if (matchCount === 0) return { edits: [] };
 
-          // Atomic update: one setFiles call → single IndexedDB write
+          // Atomic update: compute the full new tree then write it in one setFiles call.
+          // Zustand's persist middleware flushes this to IndexedDB as a single transaction.
+          const { setFiles } = useWorkspaceStore.getState();
           const nextTree = applyEditsToTree(filesRef.current, edits);
-          useWorkspaceStore.getState().setFiles(nextTree);
-          // Invalidate symbol index so next build re-indexes from scratch
-          useDiagnosticsStore.getState().clearDiagnostics();
+          setFiles(nextTree);
 
+          // Invalidate the symbol index so the next build re-indexes from scratch.
+          _useDiagnosticsStore.getState().clearDiagnostics();
+
+          // Return workspace edits so Monaco can show the preview diff (F2 UI)
           const workspaceEdits: Monaco.languages.WorkspaceEdit = {
             edits: edits.flatMap((edit) => {
               const uri = monaco.Uri.parse(`inmemory://workspace/${edit.fileId}`);
               const lines = edit.newContent.split("\n");
-              return [{
-                resource: uri,
-                textEdit: {
-                  range: { startLineNumber: 1, startColumn: 1, endLineNumber: lines.length, endColumn: lines[lines.length - 1].length + 1 },
-                  text: edit.newContent,
+              return [
+                {
+                  resource: uri,
+                  textEdit: {
+                    range: {
+                      startLineNumber: 1,
+                      startColumn: 1,
+                      endLineNumber: lines.length,
+                      endColumn: lines[lines.length - 1].length + 1,
+                    },
+                    text: edit.newContent,
+                  },
+                  versionId: undefined,
                 },
-                versionId: undefined,
-              }];
+              ];
             }),
           };
+
           return workspaceEdits;
         },
+
         resolveRenameLocation(model, position) {
           const word = model.getWordAtPosition(position);
           if (!word) return { range: new monaco.Range(0, 0, 0, 0), text: "" };
           return {
-            range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
+            range: new monaco.Range(
+              position.lineNumber,
+              word.startColumn,
+              position.lineNumber,
+              word.endColumn,
+            ),
             text: word.word,
           };
         },
