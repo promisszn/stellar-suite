@@ -8,8 +8,6 @@ import { FileNode, sampleContracts } from "@/lib/sample-contracts";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type CustomHeaders = Record<string, string>;
-
 interface TabInfo {
   path: string[];
   name: string;
@@ -31,7 +29,8 @@ export type SidebarTab =
   | "security"
   | "tests"
   | "outline"
-  | "inspector";
+  | "inspector"
+  | "binary-diff";
 export type BuildState = "idle" | "building" | "success" | "error";
 
 export interface WorkspaceTextFile {
