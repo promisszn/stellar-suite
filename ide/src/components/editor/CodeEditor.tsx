@@ -17,6 +17,7 @@ import { analyzeMathSafety } from "../../lib/mathSafetyAnalyzer";
 import { useMathSafetyStore } from "../../store/useMathSafetyStore";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { getAllMonacoCompletions } from "@/utils/proptestSnippets";
+import { useTestGutter } from "@/hooks/useTestGutter";
 
 interface CodeEditorProps {
   onCursorChange?: (line: number, col: number) => void;
@@ -30,6 +31,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ onCursorChange, onSave }) => {
   const { getFileCoverage } = useCoverageStore();
   const { setJumpToLine, saveViewState, getViewState } = useEditorStore();
   const rustProviderRegistered = useRef(false);
+
+  useTestGutter({ editor: editorRef.current, monaco: monacoRef.current, filePath: activeFileId });
   const monacoRef = useRef<typeof Monaco | null>(null);
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const semanticProviderRegistered = useRef(false);
