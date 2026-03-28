@@ -12,6 +12,7 @@ import {
   PanelLeftOpen,
   Settings,
   ListTree,
+  Library,
   Binary,
 } from "lucide-react";
 import { ReactNode } from "react";
@@ -25,6 +26,7 @@ export type ActivityTab =
   | "security"
   | "tests"
   | "outline"
+  | "references";
   | "binary-diff"
   | "oracle";
 
@@ -98,10 +100,10 @@ const tabs: ActivityBarTab[] = [
     title: "Test Explorer",
   },
   {
-    id: "oracle",
-    icon: <Plug className="h-5 w-5" />,
-    label: "Oracle",
-    title: "Oracle Integration Assistant",
+    id: "references",
+    icon: <Library className="h-5 w-5" />,
+    label: "References",
+    title: "Find All References",
   },
 ];
 

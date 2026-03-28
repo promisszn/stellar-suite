@@ -30,6 +30,7 @@ export type SidebarTab =
   | "tests"
   | "outline"
   | "inspector"
+  | "references";
   | "binary-diff";
 export type BuildState = "idle" | "building" | "success" | "error";
 
