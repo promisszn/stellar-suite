@@ -18,6 +18,7 @@ import { MultisigView } from "@/components/ide/MultisigView";
 import { LiquidityPoolSimulator } from "@/components/ide/LiquidityPoolSimulator";
 import { GitPane } from "@/components/ide/GitPane";
 import { DiffEditorPane } from "@/components/editor/DiffEditorPane";
+import { CommentsPane } from "@/components/editor/CommentsPane";
 // import { EditorTabs } from "@/components/ide/EditorTabs";
 import { FileExplorer } from "@/components/ide/FileExplorer";
 import { IdentitiesView } from "@/components/ide/IdentitiesView";
@@ -40,6 +41,7 @@ import { Toolbar } from "@/components/ide/Toolbar";
 import { OutlineView } from "@/components/sidebar/OutlineView";
 import { FuzzingPanel } from "@/components/sidebar/FuzzingPanel";
 import { AssetManager } from "@/components/sidebar/AssetManager";
+import { TutorialsPane } from "@/components/sidebar/TutorialsPane";
 // import { ActivityBar } from "@/components/layout/ActivityBar";
 import { StarterProjectWizard } from "@/components/modals/StarterProjectWizard";
 import { ActivityBar } from "@/components/layout/ActivityBar";
@@ -66,7 +68,10 @@ import { useErrorHelpStore } from "@/store/useErrorHelpStore";
 import ErrorHelpPanel from "@/components/ide/ErrorHelpPanel";
 import { useCloudSyncStore } from "@/store/useCloudSyncStore";
 import { ConflictModal } from "@/components/cloud/ConflictModal";
-import { useAuth } from "@/hooks/useAuth";
+import {
+  createWorkspaceSnapshot,
+  tutorialEngine,
+} from "@/lib/tutorials/tutorialEngine";
 import { parseCargoAuditOutput } from "@/utils/cargoAuditParser";
 import { parseMixedOutput } from "@/utils/cargoParser";
 import { parseClippyOutput, type ClippyLint } from "@/utils/clippyParser";
@@ -225,12 +230,11 @@ export default function Index() {
     useVCSStore();
   const sharedEnvConfig = useSharedEnvironmentStore((s) => s.config);
   const { addLog: addAuditLog } = useAuditLogStore();
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const auditUser = user?.name ?? user?.email ?? "Guest";
   const { setDiagnostics, clearDiagnostics } = useDiagnosticsStore();
   const { addContract } = useDeployedContractsStore();
   const { isOpen: isErrorHelpOpen, errorCode, closeErrorHelp } = useErrorHelpStore();
-  const { user, isAuthenticated } = useAuth();
   const { scheduleAutoSave, syncStatus, conflictData } = useCloudSyncStore();
   const {
     isDeployModalOpen,
@@ -324,8 +328,22 @@ export default function Index() {
       setLeftSidebarTab("references");
       setShowExplorer(true);
     };
+    const handleCommentsPane = () => {
+      setLeftSidebarTab("comments");
+      setShowExplorer(true);
+    };
+    const handleTutorialsPane = () => {
+      setLeftSidebarTab("tutorials");
+      setShowExplorer(true);
+    };
     window.addEventListener("referencesFound", handleRefTab);
-    return () => window.removeEventListener("referencesFound", handleRefTab);
+    window.addEventListener("comments:open-pane", handleCommentsPane);
+    window.addEventListener("tutorials:open-pane", handleTutorialsPane);
+    return () => {
+      window.removeEventListener("referencesFound", handleRefTab);
+      window.removeEventListener("comments:open-pane", handleCommentsPane);
+      window.removeEventListener("tutorials:open-pane", handleTutorialsPane);
+    };
   }, [setLeftSidebarTab, setShowExplorer]);
 
   const contractName = useMemo(
@@ -1054,6 +1072,7 @@ export default function Index() {
             ) : null}
             {leftSidebarTab === "fuzzing" ? <FuzzingPanel /> : null}
             {leftSidebarTab === "git" ? <GitPane /> : null}
+            {leftSidebarTab === "comments" ? <CommentsPane /> : null}
             {leftSidebarTab === "references" ? <ReferencesPane /> : null}
             {leftSidebarTab === "binary-diff" ? (
               <div className="flex flex-col h-full bg-sidebar p-4 space-y-4">
@@ -1078,6 +1097,7 @@ export default function Index() {
             {leftSidebarTab === "liquidity" ? <LiquidityPoolSimulator /> : null}
             {leftSidebarTab === "audit" ? <AuditLogView /> : null}
             {leftSidebarTab === "assets" ? <AssetManager /> : null}
+            {leftSidebarTab === "tutorials" ? <TutorialsPane /> : null}
           </aside>
         ) : null}
 
