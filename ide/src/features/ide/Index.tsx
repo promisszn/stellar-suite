@@ -40,7 +40,6 @@ import { Toolbar } from "@/components/ide/Toolbar";
 import { OutlineView } from "@/components/sidebar/OutlineView";
 import { FuzzingPanel } from "@/components/sidebar/FuzzingPanel";
 import { AssetManager } from "@/components/sidebar/AssetManager";
-// import { ActivityBar } from "@/components/layout/ActivityBar";
 import { StarterProjectWizard } from "@/components/modals/StarterProjectWizard";
 import { ActivityBar } from "@/components/layout/ActivityBar";
 import { NETWORK_CONFIG, type NetworkKey } from "@/lib/networkConfig";
@@ -59,7 +58,6 @@ import { useIdentityStore } from "@/store/useIdentityStore";
 import { useWorkspaceStore, flattenWorkspaceFiles } from "@/store/workspaceStore";
 import { useSharedEnvironmentStore } from "@/store/useSharedEnvironmentStore";
 import { useAuditLogStore } from "@/store/useAuditLogStore";
-import { useAuth } from "@/hooks/useAuth";
 import { AuditLogView } from "@/components/ide/AuditLogView";
 import { useVCSStore } from "@/store/vcsStore";
 import { useErrorHelpStore } from "@/store/useErrorHelpStore";
@@ -67,6 +65,7 @@ import ErrorHelpPanel from "@/components/ide/ErrorHelpPanel";
 import { useCloudSyncStore } from "@/store/useCloudSyncStore";
 import { ConflictModal } from "@/components/cloud/ConflictModal";
 import { useAuth } from "@/hooks/useAuth";
+import { useNotificationStore } from "@/store/useNotificationStore";
 import { parseCargoAuditOutput } from "@/utils/cargoAuditParser";
 import { parseMixedOutput } from "@/utils/cargoParser";
 import { parseClippyOutput, type ClippyLint } from "@/utils/clippyParser";
@@ -161,16 +160,16 @@ const formatRunTime = () =>
 
 function TestingSidebar() {
   const [tab, setTab] = useState<"snippets" | "templates" | "generate">("snippets");
+
   return (
     <div className="flex h-full flex-col">
-      {/* Sub-tab bar */}
       <div className="flex shrink-0 border-b border-sidebar-border">
         {(["snippets", "templates", "generate"] as const).map((t) => (
           <button
             key={t}
             type="button"
             onClick={() => setTab(t)}
-            className={`flex-1 py-1.5 font-mono text-[10px] uppercase tracking-wider transition-colors border-b-2 ${
+            className={`flex-1 border-b-2 py-1.5 font-mono text-[10px] uppercase tracking-wider transition-colors ${
               tab === t
                 ? "border-primary text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground"
@@ -181,9 +180,9 @@ function TestingSidebar() {
         ))}
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
-        {tab === "snippets"  && <TestingView />}
+        {tab === "snippets" && <TestingView />}
         {tab === "templates" && <TemplatesView />}
-        {tab === "generate"  && <GeneratePropertyTest />}
+        {tab === "generate" && <GeneratePropertyTest />}
       </div>
     </div>
   );
@@ -218,6 +217,7 @@ export default function Index() {
     setDiffViewPath,
     setTerminalOutput,
   } = useWorkspaceStore();
+
   useTerminalBridge();
 
   const { activeContext, activeIdentity, loadIdentities } = useIdentityStore();
@@ -225,12 +225,11 @@ export default function Index() {
     useVCSStore();
   const sharedEnvConfig = useSharedEnvironmentStore((s) => s.config);
   const { addLog: addAuditLog } = useAuditLogStore();
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const auditUser = user?.name ?? user?.email ?? "Guest";
   const { setDiagnostics, clearDiagnostics } = useDiagnosticsStore();
   const { addContract } = useDeployedContractsStore();
   const { isOpen: isErrorHelpOpen, errorCode, closeErrorHelp } = useErrorHelpStore();
-  const { user, isAuthenticated } = useAuth();
   const { scheduleAutoSave, syncStatus, conflictData } = useCloudSyncStore();
   const {
     isDeployModalOpen,
@@ -238,18 +237,16 @@ export default function Index() {
     deploymentError,
     pendingWasmHash,
     openDeployModal,
-    closeDeployModal,
     setDeploymentStep,
     setDeploymentError,
     setPendingWasmHash,
     resetDeployment,
   } = useDeploymentStore();
 
-  // Contract ID produced by the current deployment (shown in stepper on success)
   const [deployedContractId, setDeployedContractId] = useState<string | null>(null);
-
-  const [bottomTab, setBottomTab] = useState<"console" | "events" | "proptest">("console");
-
+  const [bottomTab, setBottomTab] = useState<"console" | "events" | "proptest">(
+    "console",
+  );
   const [wizardOpen, setWizardOpen] = useState(false);
 
   useEffect(() => {
@@ -258,8 +255,6 @@ export default function Index() {
     }
   }, [files.length]);
 
-  // Propagate shared/workspace environment settings to the personal store
-  // once the workspace store has finished rehydrating from IndexedDB.
   useEffect(() => {
     if (!hydrationComplete) return;
     if (!sharedEnvConfig.enabled) return;
@@ -288,8 +283,15 @@ export default function Index() {
     loadIdentities();
   }, [loadIdentities]);
 
-  // Watch terminal output and drive the proptest store in real time
+  useEffect(() => {
+    useNotificationStore.getState().addNotification({
+      message: "IDE Loaded Successfully 🚀",
+      type: "success",
+    });
+  }, []);
+
   useProptestOutputWatcher();
+
   useEffect(() => {
     if (!hydrationComplete) {
       return;
@@ -298,7 +300,6 @@ export default function Index() {
     void hydrateLocalRepo(flattenWorkspaceFiles(files));
   }, [files, hydrateLocalRepo, hydrationComplete]);
 
-  // Auto-save to cloud (throttled 5 s) whenever files change and user is signed in
   useEffect(() => {
     if (!isAuthenticated || !user || !hydrationComplete) return;
     const userId = user.id ?? user.email ?? "anon";
@@ -324,6 +325,7 @@ export default function Index() {
       setLeftSidebarTab("references");
       setShowExplorer(true);
     };
+
     window.addEventListener("referencesFound", handleRefTab);
     return () => window.removeEventListener("referencesFound", handleRefTab);
   }, [setLeftSidebarTab, setShowExplorer]);
@@ -368,8 +370,7 @@ export default function Index() {
 
       if (!response.ok) {
         throw new Error(
-          output.trim() ||
-            `Build request failed with status ${response.status}`,
+          output.trim() || `Build request failed with status ${response.status}`,
         );
       }
 
@@ -395,7 +396,12 @@ export default function Index() {
         user: auditUser,
         params: { contractName, network },
         details: message,
-        rawJson: { contractName, network, error: message, timestamp: new Date().toISOString() },
+        rawJson: {
+          contractName,
+          network,
+          error: message,
+          timestamp: new Date().toISOString(),
+        },
       });
     } finally {
       setIsCompiling(false);
@@ -444,9 +450,7 @@ export default function Index() {
       const parsedDiagnostics = parseMixedOutput(output, contractName);
 
       setDiagnostics(
-        parsedDiagnostics.length > 0
-          ? parsedDiagnostics
-          : parsedClippy.diagnostics,
+        parsedDiagnostics.length > 0 ? parsedDiagnostics : parsedClippy.diagnostics,
       );
       setClippyLints(parsedClippy.lints);
       setLastClippyRunAt(formatRunTime());
@@ -572,11 +576,6 @@ export default function Index() {
     [appendTerminalOutput, files, updateFileContent],
   );
 
-  /**
-   * Run the instantiation step (step 2) given an already-uploaded WASM hash.
-   * Extracted so it can be called both from the sequential flow and from
-   * the "Retry instantiation" button in the stepper.
-   */
   const runInstantiate = useCallback(
     async (wasmHash: string) => {
       const rpcUrl =
@@ -640,9 +639,9 @@ export default function Index() {
       toast.success(`Contract deployed: ${newContractId.substring(0, 8)}…`);
     },
     [
-      addAuditLog,
       activeContext,
       activeIdentity,
+      addAuditLog,
       addContract,
       appendTerminalOutput,
       auditUser,
@@ -654,11 +653,6 @@ export default function Index() {
     ],
   );
 
-  /**
-   * Full two-phase deployment:
-   *   Phase 1 — compile + upload WASM  → wasmHash
-   *   Phase 2 — createContract         → contractId (C...)
-   */
   const handleDeploy = useCallback(async () => {
     setDeployedContractId(null);
     openDeployModal();
@@ -669,7 +663,6 @@ export default function Index() {
     appendTerminalOutput(`> Deploying to ${network}…\r\n`);
 
     try {
-      // ── Phase 1: compile + upload WASM ──────────────────────────────────
       setDeploymentStep("uploading");
       appendTerminalOutput("> Compiling and uploading WASM…\r\n");
 
@@ -686,8 +679,8 @@ export default function Index() {
         throw new Error(output.trim() || `Build failed with status ${response.status}`);
       }
 
-      // Extract WASM hash from compile output
       let wasmHash: string | null = null;
+
       try {
         const parsed = JSON.parse(output) as { contractHash?: string | null };
         wasmHash = parsed.contractHash ?? null;
@@ -698,16 +691,13 @@ export default function Index() {
 
       if (!wasmHash) {
         throw new Error(
-          "WASM uploaded but no contract hash was returned. " +
-            "Cannot proceed to instantiation.",
+          "WASM uploaded but no contract hash was returned. Cannot proceed to instantiation.",
         );
       }
 
       appendTerminalOutput(`✓ WASM uploaded. Hash: ${wasmHash}\r\n`);
-      // Persist hash so the user can retry instantiation without re-uploading
       setPendingWasmHash(wasmHash);
 
-      // ── Phase 2: instantiate contract ───────────────────────────────────
       await runInstantiate(wasmHash);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Deployment failed";
@@ -722,7 +712,12 @@ export default function Index() {
         user: auditUser,
         params: { contractName, network },
         details: message,
-        rawJson: { contractName, network, error: message, timestamp: new Date().toISOString() },
+        rawJson: {
+          contractName,
+          network,
+          error: message,
+          timestamp: new Date().toISOString(),
+        },
       });
     }
   }, [
@@ -742,16 +737,16 @@ export default function Index() {
 
   const handleTest = useCallback(() => {
     void (async () => {
-    setTerminalExpanded(true);
+      setTerminalExpanded(true);
 
-    if (mockLedgerState.entries.length > 0) {
-      appendTerminalOutput(
-        `Injecting ${mockLedgerState.entries.length} mock ledger ${mockLedgerState.entries.length === 1 ? "entry" : "entries"} via --ledger-snapshot...\r\n`,
-      );
-      appendTerminalOutput(
-        `Mock state: ${JSON.stringify(mockLedgerState)}\r\n`,
-      );
-    }
+      if (mockLedgerState.entries.length > 0) {
+        appendTerminalOutput(
+          `Injecting ${mockLedgerState.entries.length} mock ledger ${
+            mockLedgerState.entries.length === 1 ? "entry" : "entries"
+          } via --ledger-snapshot...\r\n`,
+        );
+        appendTerminalOutput(`Mock state: ${JSON.stringify(mockLedgerState)}\r\n`);
+      }
 
       const discoveredTests = discoverWorkspaceTests(files, contractName);
       const integrationTargets = listIntegrationTargets(discoveredTests);
@@ -763,10 +758,17 @@ export default function Index() {
       }
 
       appendTerminalOutput(
-        `Detected ${discoveredTests.length} test(s): ${discoveredTests.filter((test) => test.testType === "integration").length} integration, ${discoveredTests.filter((test) => test.testType === "unit").length} unit.\r\n`,
+        `Detected ${discoveredTests.length} test(s): ${
+          discoveredTests.filter((test) => test.testType === "integration").length
+        } integration, ${
+          discoveredTests.filter((test) => test.testType === "unit").length
+        } unit.\r\n`,
       );
+
       if (hasRootTests) {
-        appendTerminalOutput("Integration tests folder detected at contract root: tests/.\r\n");
+        appendTerminalOutput(
+          "Integration tests folder detected at contract root: tests/.\r\n",
+        );
       }
 
       try {
@@ -810,7 +812,8 @@ export default function Index() {
         setTestRun(nextRun);
         setTerminalOutput(formatTestRunForTerminal(nextRun));
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Run test request failed";
+        const message =
+          error instanceof Error ? error.message : "Run test request failed";
         appendTerminalOutput(`Falling back to simulated tests: ${message}\r\n`);
         const rawOutput = createSimulatedCargoTestOutput({ files, activeTabPath });
         const nextRun = parseStructuredTestOutput(rawOutput);
@@ -832,7 +835,9 @@ export default function Index() {
   const handleRerunFailedTests = useCallback(() => {
     void (async () => {
       const failedTestNames =
-        testRun?.cases.filter((testCase) => testCase.status === "failed").map((testCase) => testCase.name) ?? [];
+        testRun?.cases
+          .filter((testCase) => testCase.status === "failed")
+          .map((testCase) => testCase.name) ?? [];
 
       if (failedTestNames.length === 0) {
         return;
@@ -900,15 +905,25 @@ export default function Index() {
         setTerminalOutput(formatTestRunForTerminal(nextRun));
       }
     })();
-  }, [activeTabPath, compilePayload.files, contractName, files, setTerminalExpanded, setTerminalOutput, testRun]);
+  }, [
+    activeTabPath,
+    compilePayload.files,
+    contractName,
+    files,
+    setTerminalExpanded,
+    setTerminalOutput,
+    testRun,
+  ]);
 
   const handleOpenTestTrace = useCallback(
     (traceFile: string, line: number, column = 1) => {
       const pathParts = resolveWorkspacePathForTrace(traceFile, files);
+
       if (!pathParts) {
         appendTerminalOutput(`Unable to resolve ${traceFile}:${line}:${column}\r\n`);
         return;
       }
+
       addTab(pathParts, pathParts[pathParts.length - 1]);
       setActiveTabPath(pathParts);
       window.dispatchEvent(
@@ -979,7 +994,9 @@ export default function Index() {
     <div className="flex h-screen flex-col overflow-hidden">
       <Toolbar
         onCompile={handleCompile}
-        onDeploy={() => { void handleDeploy(); }}
+        onDeploy={() => {
+          void handleDeploy();
+        }}
         onTest={handleTest}
         isCompiling={isCompiling}
         buildState={buildState}
@@ -1025,9 +1042,7 @@ export default function Index() {
             {leftSidebarTab === "identities" ? (
               <IdentitiesView network={network} />
             ) : null}
-            {leftSidebarTab === "search" ? (
-              <GlobalSearch />
-            ) : null}
+            {leftSidebarTab === "search" ? <GlobalSearch /> : null}
             {leftSidebarTab === "outline" ? <OutlineView /> : null}
             {leftSidebarTab === "security" ? (
               <div className="h-full overflow-y-auto">
@@ -1049,40 +1064,43 @@ export default function Index() {
                 </div>
               </div>
             ) : null}
-            {leftSidebarTab === "tests" ? (
-              <TestingSidebar />
-            ) : null}
+            {leftSidebarTab === "tests" ? <TestingSidebar /> : null}
             {leftSidebarTab === "fuzzing" ? <FuzzingPanel /> : null}
             {leftSidebarTab === "git" ? <GitPane /> : null}
             {leftSidebarTab === "references" ? <ReferencesPane /> : null}
             {leftSidebarTab === "binary-diff" ? (
-              <div className="flex flex-col h-full bg-sidebar p-4 space-y-4">
-                <div className="flex items-center gap-2 text-primary font-bold text-[10px] uppercase tracking-wider">
+              <div className="flex h-full flex-col space-y-4 bg-sidebar p-4">
+                <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-primary">
                   <Binary className="h-4 w-4" />
                   <span>Binary Auditing</span>
                 </div>
-                <p className="text-[11px] text-muted-foreground leading-relaxed italic">
-                  Compare compiled WASM binaries side-by-side to audit changes in public symbols and byte-level logic.
+                <p className="text-[11px] italic leading-relaxed text-muted-foreground">
+                  Compare compiled WASM binaries side-by-side to audit changes in
+                  public symbols and byte-level logic.
                 </p>
-                <div className="p-3 bg-muted/50 rounded-lg border border-border">
-                  <h4 className="text-[10px] font-bold uppercase mb-1.5 flex items-center gap-1.5">
+                <div className="rounded-lg border border-border bg-muted/50 p-3">
+                  <h4 className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold uppercase">
                     <Activity className="h-3 w-3" /> Quick Tip
                   </h4>
-                  <p className="text-[10px] text-muted-foreground">Select two builds in the main area to analyze the delta between them.</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    Select two builds in the main area to analyze the delta
+                    between them.
+                  </p>
                 </div>
               </div>
             ) : null}
             {leftSidebarTab === "inspector" ? <InspectorPane /> : null}
             {leftSidebarTab === "benchmarks" ? <BenchmarkDashboard /> : null}
             {leftSidebarTab === "multisig" ? <MultisigView network={network} /> : null}
-            {leftSidebarTab === "liquidity" ? <LiquidityPoolSimulator /> : null}
+            {leftSidebarTab === "liquidity" ? (
+              <LiquidityPoolSimulator />
+            ) : null}
             {leftSidebarTab === "audit" ? <AuditLogView /> : null}
             {leftSidebarTab === "assets" ? <AssetManager /> : null}
           </aside>
         ) : null}
 
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          {/* <EditorTabs /> */}
           <div className="min-h-0 flex-1 overflow-hidden">
             {leftSidebarTab === "binary-diff" ? (
               <BinaryDiffTool />
@@ -1096,8 +1114,8 @@ export default function Index() {
               <CodeEditor />
             )}
           </div>
-          <div className="h-56 shrink-0 border-t border-border flex flex-col">
-            {/* Bottom panel tab bar */}
+
+          <div className="flex h-56 shrink-0 flex-col border-t border-border">
             <div
               className="flex shrink-0 items-center border-b border-border bg-secondary"
               role="tablist"
@@ -1105,8 +1123,8 @@ export default function Index() {
             >
               {(
                 [
-                  { id: "console",  label: "Console"  },
-                  { id: "events",   label: "Events"   },
+                  { id: "console", label: "Console" },
+                  { id: "events", label: "Events" },
                   { id: "proptest", label: "Proptest" },
                 ] as const
               ).map((tab) => (
@@ -1116,7 +1134,7 @@ export default function Index() {
                   role="tab"
                   aria-selected={bottomTab === tab.id}
                   onClick={() => setBottomTab(tab.id)}
-                  className={`px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider transition-colors border-b-2 ${
+                  className={`border-b-2 px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider transition-colors ${
                     bottomTab === tab.id
                       ? "border-primary text-foreground"
                       : "border-transparent text-muted-foreground hover:text-foreground"
@@ -1127,7 +1145,6 @@ export default function Index() {
               ))}
             </div>
 
-            {/* Tab panels */}
             <div className="min-h-0 flex-1 overflow-hidden">
               {bottomTab === "console" && (
                 <Terminal
@@ -1141,7 +1158,7 @@ export default function Index() {
                   }
                 />
               )}
-              {bottomTab === "events"   && <EventsPane />}
+              {bottomTab === "events" && <EventsPane />}
               {bottomTab === "proptest" && <ProptestView />}
             </div>
           </div>
@@ -1187,11 +1204,10 @@ export default function Index() {
 
       <StarterProjectWizard open={wizardOpen} onOpenChange={setWizardOpen} />
 
-      {/* ── Cloud conflict resolution modal ───────────────────────────── */}
       {syncStatus === "conflict" && conflictData && (
         <ConflictModal conflictData={conflictData} />
       )}
-      {/* ── Deployment progress modal ──────────────────────────────── */}
+
       <DeploymentStepper
         open={isDeployModalOpen}
         step={deploymentStep}
