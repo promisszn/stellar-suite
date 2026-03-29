@@ -30,15 +30,16 @@ import { ProptestView } from "@/components/Panels/ProptestView";
 import { EventsPane } from "@/components/ide/EventsPane";
 import { ReferencesPane } from "@/components/ide/ReferencesPane";
 import { InspectorPane } from "@/components/ide/InspectorPane";
-import { ProptestView } from "@/components/Panels/ProptestView";
 import { StatusBar } from "@/components/ide/StatusBar";
 import { Terminal } from "@/components/ide/Terminal";
+import { useTerminalBridge } from "@/hooks/useTerminalBridge";
 import { TestResultsLog } from "@/components/terminal/TestResultsLog";
 // import TestExplorer from "@/components/ide/TestExplorer";
 import XdrInspector from "@/components/tools/XdrInspector";
-// import { Toolbar } from "@/components/ide/Toolbar";
+import { Toolbar } from "@/components/ide/Toolbar";
 import { OutlineView } from "@/components/sidebar/OutlineView";
 import { FuzzingPanel } from "@/components/sidebar/FuzzingPanel";
+import { AssetManager } from "@/components/sidebar/AssetManager";
 // import { ActivityBar } from "@/components/layout/ActivityBar";
 import { StarterProjectWizard } from "@/components/modals/StarterProjectWizard";
 import { ActivityBar } from "@/components/layout/ActivityBar";
@@ -63,6 +64,9 @@ import { AuditLogView } from "@/components/ide/AuditLogView";
 import { useVCSStore } from "@/store/vcsStore";
 import { useErrorHelpStore } from "@/store/useErrorHelpStore";
 import ErrorHelpPanel from "@/components/ide/ErrorHelpPanel";
+import { useCloudSyncStore } from "@/store/useCloudSyncStore";
+import { ConflictModal } from "@/components/cloud/ConflictModal";
+import { useAuth } from "@/hooks/useAuth";
 import { parseCargoAuditOutput } from "@/utils/cargoAuditParser";
 import { parseMixedOutput } from "@/utils/cargoParser";
 import { parseClippyOutput, type ClippyLint } from "@/utils/clippyParser";
@@ -214,6 +218,7 @@ export default function Index() {
     setDiffViewPath,
     setTerminalOutput,
   } = useWorkspaceStore();
+  useTerminalBridge();
 
   const { activeContext, activeIdentity, loadIdentities } = useIdentityStore();
   const { localRepoInitialized, hydrateLocalRepo, refreshLocalStatuses } =
@@ -225,6 +230,8 @@ export default function Index() {
   const { setDiagnostics, clearDiagnostics } = useDiagnosticsStore();
   const { addContract } = useDeployedContractsStore();
   const { isOpen: isErrorHelpOpen, errorCode, closeErrorHelp } = useErrorHelpStore();
+  const { user, isAuthenticated } = useAuth();
+  const { scheduleAutoSave, syncStatus, conflictData } = useCloudSyncStore();
   const {
     isDeployModalOpen,
     deploymentStep,
@@ -290,6 +297,13 @@ export default function Index() {
 
     void hydrateLocalRepo(flattenWorkspaceFiles(files));
   }, [files, hydrateLocalRepo, hydrationComplete]);
+
+  // Auto-save to cloud (throttled 5 s) whenever files change and user is signed in
+  useEffect(() => {
+    if (!isAuthenticated || !user || !hydrationComplete) return;
+    const userId = user.id ?? user.email ?? "anon";
+    scheduleAutoSave(userId, flattenWorkspaceFiles(files), network);
+  }, [files, isAuthenticated, user, network, hydrationComplete, scheduleAutoSave]);
 
   useEffect(() => {
     if (!hydrationComplete || !localRepoInitialized) {
@@ -963,7 +977,7 @@ export default function Index() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      {/* <Toolbar
+      <Toolbar
         onCompile={handleCompile}
         onDeploy={() => { void handleDeploy(); }}
         onTest={handleTest}
@@ -975,7 +989,7 @@ export default function Index() {
         isRunningClippy={isRunningClippy}
         onRunAudit={handleRunAudit}
         isRunningAudit={isRunningAudit}
-      /> */}
+      />
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <ActivityBar
@@ -1063,6 +1077,7 @@ export default function Index() {
             {leftSidebarTab === "multisig" ? <MultisigView network={network} /> : null}
             {leftSidebarTab === "liquidity" ? <LiquidityPoolSimulator /> : null}
             {leftSidebarTab === "audit" ? <AuditLogView /> : null}
+            {leftSidebarTab === "assets" ? <AssetManager /> : null}
           </aside>
         ) : null}
 
@@ -1171,6 +1186,11 @@ export default function Index() {
       </div>
 
       <StarterProjectWizard open={wizardOpen} onOpenChange={setWizardOpen} />
+
+      {/* ── Cloud conflict resolution modal ───────────────────────────── */}
+      {syncStatus === "conflict" && conflictData && (
+        <ConflictModal conflictData={conflictData} />
+      )}
       {/* ── Deployment progress modal ──────────────────────────────── */}
       <DeploymentStepper
         open={isDeployModalOpen}

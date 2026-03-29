@@ -102,7 +102,7 @@ const integerSnippets: PropTestSnippet[] = [
         // Property: the function must not panic for any valid amount
         let result = client.\${3:transfer}(&amount);
         prop_assert!(result >= 0i128, "result must be non-negative, got {}", result);
-        $0
+        \$0
     }
 }`,
     get previewText() {
@@ -129,7 +129,7 @@ const integerSnippets: PropTestSnippet[] = [
         }
 
         prop_assert_eq!(last, increments, "counter must equal number of increments");
-        $0
+        \$0
     }
 }`,
     get previewText() {
@@ -160,7 +160,7 @@ const integerSnippets: PropTestSnippet[] = [
         env.ledger().with_mut(|li| li.timestamp = base_ts + delta_sec);
         let result = client.\${3:check_expiry}();
         prop_assert!(result, "should succeed after delta_sec={}", delta_sec);
-        $0
+        \$0
     }
 }`,
     get previewText() {
@@ -189,7 +189,7 @@ const integerSnippets: PropTestSnippet[] = [
         // Fee must be ≤ amount and non-negative
         prop_assert!(fee >= 0i128,   "fee must be non-negative");
         prop_assert!(fee <= amount,  "fee must not exceed amount");
-        $0
+        \$0
     }
 }`,
     get previewText() {
@@ -229,7 +229,7 @@ const addressSnippets: PropTestSnippet[] = [
             client.\${4:admin_fn}(&attacker);
         });
         prop_assert!(result.is_err(), "non-admin call must panic");
-        $0
+        \$0
     }
 }`,
     get previewText() {
@@ -258,7 +258,7 @@ const addressSnippets: PropTestSnippet[] = [
                 );
             }
         }
-        $0
+        \$0
     }
 }`,
     get previewText() {
@@ -306,7 +306,7 @@ const addressSnippets: PropTestSnippet[] = [
             after_sender  + after_receiver,
             "total balance must be conserved"
         );
-        $0
+        \$0
     }
 }`,
     get previewText() {
@@ -336,7 +336,7 @@ const stateSnippets: PropTestSnippet[] = [
         let stored = client.\${5:get_value}();
 
         prop_assert_eq!(stored, value, "stored value must equal written value");
-        $0
+        \$0
     }
 }`,
     get previewText() {
@@ -369,7 +369,7 @@ const stateSnippets: PropTestSnippet[] = [
             client.\${3:initialize}(&admin);
         });
         prop_assert!(result.is_err(), "double-init must panic");
-        $0
+        \$0
     }
 }`,
     get previewText() {
@@ -401,7 +401,7 @@ const stateSnippets: PropTestSnippet[] = [
             );
             prev = next;
         }
-        $0
+        \$0
     }
 }`,
     get previewText() {
@@ -436,7 +436,7 @@ const stateSnippets: PropTestSnippet[] = [
             "TTL must be at least the minimum threshold, got {}",
             ttl
         );
-        $0
+        \$0
     }
 }`,
     get previewText() {
@@ -489,7 +489,7 @@ const compositeSnippets: PropTestSnippet[] = [
         let expected_winner = if bid_b >= bid_a { &bidder_b } else { &bidder_a };
         let winner = client.\${6:get_winner}();
         prop_assert_eq!(&winner, expected_winner, "highest bidder must win");
-        $0
+        \$0
     }
 }`,
     get previewText() {
@@ -523,7 +523,7 @@ const compositeSnippets: PropTestSnippet[] = [
         client.\${4:release}(&id, &payer);
         let escrow = client.\${5:get_escrow}(&id);
         prop_assert_eq!(escrow.amount, amount, "released amount must match deposited amount");
-        $0
+        \$0
     }
 }`,
     get previewText() {
@@ -571,7 +571,7 @@ mod prop_tests {
             // TODO: call contract and assert invariants
             let result = client.\${6:my_fn}(&value);
             prop_assert!(result >= 0, "result must be non-negative");
-            $0
+            \$0
         }
     }
 }`,

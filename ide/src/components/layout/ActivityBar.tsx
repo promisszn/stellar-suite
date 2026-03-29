@@ -39,7 +39,8 @@ export type ActivityTab =
   | "oracle"
   | "benchmarks"
   | "inspector"
-  | "audit";
+  | "audit"
+  | "assets";
 
 interface ActivityBarProps {
   activeTab: ActivityTab;
